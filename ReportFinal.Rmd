@@ -1,0 +1,664 @@
+---
+title: "The (Un)Dropout: Exploring Factors Influencing Completion Rates at 4-year US Institutions"
+author: "Jennifer Pham"
+output:
+  tufte_handout: default
+---
+
+```{r setup, include=FALSE, echo=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE)
+library(ggplot2)
+library(dplyr)
+library(usmap)
+library(readxl)
+library(tidyr)
+library(cvTools)
+library(knitr)
+library(tufte)
+library(tibble)
+
+```
+
+
+# Executive Summary
+\newthought{Higher} education is  an important part of our society due to its promises of social mobility, financial security, and improved quality of life. We can measure the quality of an institution by various metrics such as faculty-to-student ratio, average accumulated debt, or completion rates. Completion rate is defined as the percentage of students who start a degree at a particular institution and are able to complete it. This project seeks to explore the question: what factors are associated with completion rates for four year colleges in the US?
+
+To further explore this question, this report utilizes the College Scorecard. The College Scorecard is a widely accessible data set from the US Department of Education that contains institutional level data for all colleges in the United States and US territories. The College Scorecard has been collected every year since 1996. This report focus on data from 2013-2014. The provided data set contains 7,869 institutions and over 100 institutional level variables. Since completion rates is time dependent, this report focuses on four-year institutions. Though the College Scorecard contains many variables, I selected variables that I believed would be relevant in my analysis. The final data set utilized in this report contains ~2100 observations and 40 variables. Some limitations to this analysis may be the quality of the overall data set. There have been some critiques on the utility of the College Scorecard such as this data set should not necessarily be used to inform individual decisions. Rather, this data set can be informative in helping us understand macro-level trends within the college landscape.
+
+The first part of this project is an exploratory data analysis of the completion rate variable. The data set consists primarily of continuous variables and a few categorical variables. Some continuous variables include cost of institution, student demographics, and undergraduate size. Some categorical variables include state, region, and control. To explore the completion rate variables, I used a variety of methods to visualize some variables. Some of the main methods I used were maps, box plots, and scatter plots. Maps allowed me to explore the state variable against continuous variables. Box plots allowed me to see the relationship between a categorical variable and a continuous variable such as cost of institution by control. Scatter plots allowed me to observe the relationship between two continuous variables. Some initial observations I observed while exploring the completion rate variable included faculty pay, retention rates, and family income are positively associated with completion rates. On the other hand completion rate and the percentage of first generation college students are negatively associated. Based on initial observations from my exploratory data analysis and my own domain knowledge, I hypothesized higher completion rates are associated with schools that are not for-profit privates, pay their faculty more, have higher retention rates, have a lower percentage of first generation students and have higher family income
+
+To further explore my primary hypothesis, I used linear regression to understand the effects that the different variables in the data set have on completion rates. I first split my data into two, where the first half would be to perform model selection and the second half would be to assess the effects the variables have on completion rate. My selected model was from using backward stepwise regression with interaction terms. 
+
+Some of the variables that have an impact in understanding the completion rate variable include undergraduate population, percentage of Hispanic undergraduates, percentage of NHPI undergraduates, faculty salary, retention rate, family income, and percentage of women. Since interaction terms were also included in the model, these interaction should be thought of in relationship to the variable standing alone. For instance, there is a negative effect on completion rates from the first generation and Pell Grant variables but are mitigated with a higher rates of both. Cost has an effect on completion rate but is more pronounced for public and private for-profit institutions. These results support my hypothesis that institution control, retention rate, faculty pay, percentage of first and generation students impact completion rates to some degree.
+
+This analysis shows us what the larger college completion landscape looks like. This is an observational study that looks at the association between variables and completion rates, thus causal statements cannot be made. However, the relationships uncovered can point to possible smaller intervention points such as for first generation and low income students or financial aid programs that can improve student learning opportunties.
+
+# Introduction
+\newthought{College} is an important aspect of society due to its promises of social mobility, financial security, and improved quality of life. Though college is often emphasized to young people, conversations about about the actual completion of college is rarely talked about. In a 2008 Pew Research study, it found that of 100 high school graduates only 30 of them will complete college (Beach et al). Why is completion rate so low? 
+
+College completion can be defined as the proportion of first-time college enrollees that are able to finish their degree within a certain amount of time. This project seeks to answer the question: What factors are associated with completion rates across higher education institutions in the US? My hypothesis is that some of the factors that influence completion rate include family income, percentage of first generation students, retention rate, and whether an institution is private for-profit. 
+
+My work builds off of existing literature that explores completion rates. Though the discussion of completion rates is not new (Hanover Research), many sources often discuss completion rates in relationship to demographics of the individual students, such as by race, gender, and socioeconomic status. This at times implies deficit models that portray student identities as being the driving factor behind low completion rates, rather than effects of the environment on student achievement. This report seeks to be mindful of this distinction by recognizing the differences between institutional level data and student identities.
+
+The data set that is used in this report is the College Scorecard. The data provided by the College Scorecard was collected through surveys conducted by the US Department of Education. It contains institutional level data from the 8000+ institutions across the US and US territories. Though it may be hard to recreate this data set, this data is easily accessible if one wants to recreate this analysis.
+
+The goal of this report is to understand the factors that are associated with completion rate. First, I examined and explored the data set used in this analysis, the College Scorecard. Next, I took a deeper dive into the variable of interest, completion rate, and perform an initial exploratory data analysis which can help contextualize our hypothesis. Then, I focused on formalizing initial observations on completion rates by performing a multiple linearregression analysis. Last, I discussed the results and further implications for this work. 
+
+
+
+
+```{r include=FALSE, warning=FALSE}
+scorecard <- read_excel("selectedvar_1314.xlsx")
+summary(scorecard)
+```
+
+```{r include=FALSE, warning=FALSE}
+# CLEAN Data: convert to appropriate type, name categorical variables
+# Convert to appropriate type
+scorecard$HBCU <- ifelse(is.na(scorecard$HBCU), 0, scorecard$HBCU)
+
+numeric_col_names <- colnames(scorecard[, !names(scorecard) %in% c("INSTNM", "CITY", "STABBR", "PREDDEG", "HIGHDEG", "CONTROL", "REGION", "HBCU", "DISTANCEONLY")])
+## converting to numeric takes care of NULL and PrivacySupressed values
+scorecard[numeric_col_names] <- sapply(scorecard[numeric_col_names],as.numeric)
+
+factor_col_names <- c("STABBR", "PREDDEG", "HIGHDEG", "CONTROL", "REGION", "HBCU", "DISTANCEONLY")
+scorecard[factor_col_names] <- lapply(scorecard[factor_col_names], as.factor)
+levels(scorecard$PREDDEG) <- c("Not classified", "Certificate", "Associate", "Bachelor", "Graduate")
+levels(scorecard$HIGHDEG) <- c("Non-Degree", "Certificate", "Associate", "Bachelor", "Graduate")
+levels(scorecard$CONTROL) <- c("Public", "Private nonprofit", "Private for-profit")
+levels(scorecard$REGION) <- c("U.S. Service Schools", "New England", "Mid East", "Great Lakes", "Plains", "Southeast", "Southwest", "Rocky Mountains", "Far West", "Outlying Areas")
+
+#Create one column for net price for both public and private institutions
+scorecard$NPT4 <- coalesce(scorecard$NPT4_PRIV, scorecard$NPT4_PUB)
+```
+
+```{r echo=FALSE}
+fouryear <- scorecard %>% filter(PREDDEG == "Bachelor") %>% filter(DISTANCEONLY == 0) %>% filter(!grepl("Online", INSTNM)) %>% filter(!grepl("Graduate", INSTNM)) 
+fouryear <- fouryear[ , !(names(fouryear) %in% c("NPT4_PUB", "NPT4_PRIV"))]
+fouryears <- fouryear #later to build model
+```
+
+## About the Data
+The data set  be utilized in this report is the US Department's College Scorecard. The College Scorecard contains aggregate data for institutions across the United States and US Territories such as enrollment, costs, student demographics and financial outcomes. It contains over 100 variables and is representative of over 8000 unique schools in the US and US territories. The College Scorecard is collected every year, and this report focuses on the 2013-2014 academic year. The data is collected by the Integrated Postsecondary Education Data System, the National Students Loan Data System, and the Department of the Treasury, so there should not be any issues regarding the collection processes or accuracy of the data. 
+
+The analysis is focused on 4-year institutions that primarily provide their instruction on a physical campus. This results in 2121 unique institutions. In addition, the College Scorecard provides hundreds of variables ranging from student enrollment, faculty salary, and post-graduate outcomes. Many of the variables are unusable (often due to discontinuation of collecting these data points), so I went through and selected ~40 variables that I believed were important to the analysis. In addition to the variables from the College Scorecard, I introduced a HBCU variable that indicates whether an institution is an HBCU or not. HBCU or historically Black colleges and universities are colleges that were founded before 1964 with the intention on serving Black students. 
+
+This data set used in this analysis contains 41 columns, 1 of which is an identifier column (name of institution) with 2121 observations. By taking a subset of the College Scorecard, I introduced some bias as I might have not included variables that are pertinent to the overall analysis. Some of the variables included in the data set include demographic, geographic, admissions, and outcome related variables. Some demographic data include undergraduate enrollment, percentage of students by race, percent of Pell Grant recipients, percentage of students above 25, and percentage of students with a loan. Some geographic variables include the state and region an institution is in. Some cost related variables include in-state/out-of-state tuition, median earning, median debt, faculty monthly salary, and net price. Some outcome related variables include 150% time completion rate, retention rates for part-time/full-time students, median-debt, etc. To see full data dictionary, see Appendix 1.
+
+Most variables have a good amount of the data provided. For the purposes of the exploratory data analysis I did not remove missing values. Instead, for the variables I am plotting, I removed the rows with missing data for a desired variable. Many of the missing values are associated with the private for-profit institutions, such as SAT scores. This could be due to the fact that these institutions operate different and may not require or collect this data. 
+
+The goal of this report is to examine completion rate in relation to some of the aforementioned variables. Though the College Scorecard provides a completion rate variable, this is reflective of 6 years prior, i.e. 2013 data is reflective of the 2007 entering cohort. Various papers have utilized institutional level data from the entering cohort to model completion/retention metrics, but I have also seen analysis done on the same year. For simplicity and to avoid complications with merging with multiple data sets, this report uses the completion metric from the College Scorecard for the year 2013.
+
+There have been some critiques (The Institute for College Access and Success) on the implications of the College Scorecard such as it not being useful for an individual student to decide what college to attend. Rather, the College Scorecard should be used as a proxy in understanding what the current college landscape looks like from a macro perspective.
+
+
+# Exploratory Data Analysis
+## The College Landscape: At a Glance
+\newthought{In} order to understand trends within college completion, we need to grasp the college landscape. We can begin by looking at some of the categorical variables in our data set -- Control, State, and Region.
+
+```{r include=FALSE}
+p <- ggplot(fouryear) 
+```
+
+Control refers to how the institution operates and is funded, whether that be public, private nonprofit, or private for profit. This data set contains 1260 private nonprofit, 586 public, and 275 private for-profit. Control is one of the most distinct features of an institution, and is used throughout this report as a way to compare various metrics by subgroup.
+
+How are institution distributed by state? What does the control look like by state?
+```{r echo=FALSE, fig.width=12, fig.height=8}
+p + geom_bar(aes(x=reorder(STABBR, STABBR, function(x) length(x)), fill=CONTROL)) + labs(x="State",title="4-year institution count by state", fill = "Control") + theme_bw() + coord_flip() + theme(axis.text.y = element_text(size = 12), plot.title = element_text(size = 22), legend.position = "bottom", legend.box = "horizontal")
+```
+This graph shows the count of institutions in each state by control. We notice the distribution of institions vary greatly. States like New York and California have over 150 four year institutions, while states/territories like Wyoming and Virgin Islands have one institution. This can be reflective of population sizes as California and New York are two of the more populous states in the US. In addition this plot also shows the distribution of Control by each state. We notice New York has the most four year institutions, but of these institutions, it has less private for-profit than many states with less institutions including California, Pennsylvania, Texas, Arizona, and others.
+
+This data set contains a "Regions" variable which categories the states into larger geographic groupings. Since regions is based off the state variable, this report does not look at the relationship between region and state to avoid redundancy.
+
+```{r fig.margin=TRUE,  fig.width=10, fig.height=7, echo=FALSE, fig.cap="This can be due to historical events, urban sprawl, and immgration patterns. Take for instance the distribution of Black undergraduates. The highest concertration is in the Southeast which is motivated by US's history of slavery. Relationship between race and location was not deeply discussed in this report, but is important to consider as race and location are not isolated from each other. A further analysis is provided in Appendix 2."}
+fouryear$BLACK_CT <- fouryear$UGDS * fouryear$UGDS_BLACK
+UGDS_TOTAL <- fouryear %>% select(STABBR, UGDS) %>% group_by(STABBR) %>% summarise_at(vars(UGDS), list(name = sum), na.rm = TRUE)
+
+UGDS_BLACK_STATE <- fouryear %>% select(STABBR, BLACK_CT) %>% group_by(STABBR) %>% summarise_at(vars(BLACK_CT), list(name = sum), na.rm = TRUE)
+UGDS_BLACK_STATE <- merge(UGDS_BLACK_STATE, UGDS_TOTAL, by.x="STABBR", by.y="STABBR")
+UGDS_BLACK_STATE$Percentage <- UGDS_BLACK_STATE$name.x/UGDS_BLACK_STATE$name.y
+UGDS_BLACK_STATE$fips <- fips(UGDS_BLACK_STATE$STABBR)
+black_map <- plot_usmap(data=UGDS_BLACK_STATE, values="Percentage") + labs(title = "% of Black Undergrad Enrollment by State") + theme(panel.background=element_blank()) + scale_fill_gradient(low = "white", high = "darkblue", na.value="grey90") +  theme(legend.position = "bottom", legend.box = "horizontal", plot.margin = unit(c(0, 6, 0, 0), "cm"), title=element_text(size=20), legend.title=element_text(size=15))
+black_map
+```
+
+```{r include=FALSE}
+reg <- data.frame(Region=c("U.S. Service Schools", "New England", "Mid East", "Great Lakes", "Plains", "Southeast", "Southwest", "Rocky Mountains", "Far West", "Outlying Areas"), stringsAsFactors = TRUE)
+
+#Create a custom color scale
+library(RColorBrewer)
+myColors <- brewer.pal(10,"Set3")
+names(myColors) <- levels(reg$Region)
+
+
+colScale <- scale_colour_manual(name = "Region", values = myColors)
+fillScale <- scale_fill_manual(name = "Region",values = myColors)
+```
+
+```{r echo=FALSE, fig.width=10, fig.height=6}
+regions <- read_excel("regions.xlsx")
+regions$fips <- fips(regions$State)
+#regions_key <- plot_usmap(data=regions, values="Region") + labs(title = "Regions Key") +  theme(legend.position = "bottom", legend.box = "horizontal", legend.key.size = unit(.2, "cm"), axis.ticks = element_blank(), axis.line = element_blank(), plot.margin = margin(0,0,0,0,"pt"), axis.ticks.length = unit(0, "pt"), axis.text = element_blank()) + fillScale
+plot_usmap(data=regions, values="Region") + labs(title = "Regions Key") +  theme(legend.position = "bottom", legend.box = "horizontal", plot.margin = unit(c(0, 6, 0, 0), "cm"), title=element_text(size=20), legend.title=element_text(size=15), legend.text=element_text(size=10)) + fillScale + guides(fill=guide_legend(nrow=2, byrow=TRUE))
+
+
+#ggsave("regions_key.png")
+
+#knitr::include_graphics('regions_key.png')
+
+
+```
+This map is a key to distinguish which states belong to which regions. US Service Schools and Outlying Areas do not show up on the map as distinct regions. US Service Schools include United States Air Force Academy, United States Coast Guard Academy, United States Naval Academy, United States Merchant Marine Academy, and United States Military Academy. Outlying Areas consists of Samoa, Federated States of Micronesia, Guam, Marshall Islands, Puerto Rico, Palau, and Virgin Islands. 
+Geographic region is more than a grouping of states, but can show geographic clustering by key variables about language, gender, or wealth. For instance, the geographic distribution of race in the US is not equal. An example can be seen in Figure 1.
+
+
+
+
+
+
+```{r echo=FALSE, fig.width=6, fig.height=5}
+p + geom_bar(aes(x=reorder(REGION, REGION, function(x) length(x)), fill=CONTROL)) + labs(x="Region",title="4-year institution count by Region", fill = "Control") + theme_bw() + coord_flip() + theme(axis.text.y = element_text(size = 8), legend.position = "bottom", legend.box = "horizontal")
+
+```
+Though our previous plot that indicates New York as the state with the most four year institutions, this graph shows a majority of institutions are located in the Southeast. Most regions have a majority private nonprofit schools with exceptions in the Rocky Mountains and U.S. Service Schools.
+
+## Looking at Completion Rates
+The focus of this report is to better understand completion rates. This section is an exploratory analysis of the completion rate variable and other variables in relationship to it. The College Scorecard defines completion rates as "The proportion of full-time, first-time, degree/certificate-seeking undergraduates who completed a degree or certificate at the institution within 150 percent of normal time." Since the focus of this analysis is four year institutions, completion rate is defined as  finishing a program in six years. 
+
+In our data set, the completion rate variable had outlying values of 0% and 100%, which were removed since it is improbable that an institution have 0% or 100% completion rates (Resulting in a data set with 1859 institutions). Upon further investigation, some of these institutions are no longer operating or do not seem to be reliable. Some of the issues could be due to utilizing data from nearly a decade ago which could be addressed by using more recent data. This issue in outlying values can point to potential issues with the College Scorecard's reliability or even the institution need to provide accurate data.
+```{r echo=FALSE, warning=FALSE}
+fouryear_c <- fouryear %>% filter(C150_4 != 0)  %>% filter(C150_4 != 1) %>% filter(RET_FT4 != 0)  %>% filter(RET_FT4 != 1)
+pp <- ggplot(fouryear_c)
+
+pp + geom_histogram(aes(x=C150_4), bins = 30) + geom_vline(xintercept = mean(fouryear_c$C150_4), color="green") + geom_vline(xintercept = mean(fouryear_c$C150_4), color="green") + labs(x="Completion Rate", title="Distribution of 150% Completion Rates at 4-year Institutions") + theme_bw() + theme(title=element_text(size=6)) 
+```
+This histogram shows the distributions of completion rates for the institutions in the data set. Completion rates follow a roughly normal distribution that is centered around the mean which is just over 50% (50.6%). The median of the completion rate variable is also around 50%. Though this begins to tell us the story, do completion rates change as we look across different subgroups?
+
+```{r echo=FALSE}
+pp + geom_boxplot(aes(x=CONTROL, y=C150_4)) + labs(x="Institution Control", y="Completion Rates", title = "Completion Rates by Control") + theme_bw()
+```
+When we take a look at completion rate by control we notice differences between different control types. This box plot shows the distribution of completion by public, private nonprofit, and private for-profit. We notice the median for public and private nonprofit hovers just below and above 50%. The whiskers of the public and private nonprofit are fairly similar as they range from both low and high completion rates. On the other hand, private for-profit institutions have a substantially lower median at about 25%, with outlying values on the higher end. This can show that private for profit schools generally have lower completion rates and potentially show some initial differences in completion rates between nonprofit schools and for-profit schools. School control can be an indicator on student completion rates, but can differences in external factors such as location show us differences between completion rates?
+
+```{r, echo=FALSE, fig.width=6, fig.height=5}
+pp + geom_boxplot(aes(x=reorder(REGION, C150_4, na.rm = TRUE), y=C150_4, fill=REGION)) + labs(x="Region", y="Completion Rate", title="Completion Rate by Region") + coord_flip() + theme_bw() + theme(legend.position="none") + fillScale
+
+```
+Taking a look at completion rate across the 10 regions provided in this data set, there are some obvious differences in completion rates. This box plot shows that regions such as the Southeast, Rocky Mountains, Southwest, and Outlying Areas have medians below the population median. On the other hand regions such as New England and Mid East have higher completion rates with very comparable medians. Since New England and Mid East are geographically close in proximity to each other, this could potentially point to a geographic trend in completion rate in these regions (though further testing may needed to further show this). Though this plot shows us macro trends of completion rate in a region, this glosses over what is happening on the institutional or even state level.
+
+```{r echo=FALSE, fig.width=10, fig.height=7}
+completion_us <- fouryear %>% select(STABBR, C150_4) %>% group_by(STABBR) %>% summarise_at(vars(C150_4), list(name = mean), na.rm = TRUE)
+completion_us$fips <- fips(completion_us$STABBR)
+
+completion_map <- plot_usmap(data=completion_us, values="name") + labs(title = "Average Completion Rate by State") + theme(panel.background=element_blank()) + scale_fill_gradient(low = "white", high = "deepskyblue4", na.value="grey90", name="Completion Rate") + theme(legend.position = "bottom", legend.box = "horizontal", plot.margin = unit(c(0, 6, 0, 0), "cm"), title=element_text(size=20), legend.title=element_text(size=15))
+completion_map
+```
+Further, to examine completion rates by geographic location, this map paints a different, more specific picture on completion rates. This map shows us the average completion rate by state. Already we notice geographic differences across regions despite the observations we made in the box plot. Take the Far West region consisting of states such as Washington, Oregon, Nevada, California, Alaska, and Hawaii, for instance. Even though it has the 4th highest median completion rate, as seen by the previous plot, this region contains states such as Alaska and Nevada which have two of the lower average completion rates in the United States. Initial differences across regions and states could possibly point to an association between location and completion rates.
+
+
+## Retention Rate -- 1 year "Completion Rate"
+This analysis defines completion rates as  completion of a four year program in at most six years. To further explore completion rate, this section looks at a closely related metric: retention rate. Retention rate is defined as the proportion of first-year students who complete their first year of their program. Completion is dependent on retention since students cannot complete six years without finishing their first. 
+```{r echo=FALSE, warning=FALSE, fig.width=5, fig.height=4}
+pp + geom_point(aes(x = RET_FT4, y=C150_4, color=CONTROL), alpha=0.4) + labs(x="Retention Rate for First-Time Students", y="Completion Rate for First-Time Students", title="Retention vs Completion Rates", color="Control") + theme_bw() + theme(legend.position = "bottom", legend.box = "horizontal")
+```
+
+```{r echo=FALSE, fig.margin = TRUE, warning=FALSE, fig.cap="This box plot shows the distribution of retetion rates by control. Similar to completion rates, there is a stark difference between public/private nonprofit and private for-profit institutions. This could point to similar underylying mechanisms at nonprofit and for-profit institutions that have an affect on student persistance and completion."}
+p + geom_boxplot(aes(x=CONTROL, y=RET_FT4)) + labs(x="Institution Control", y="Retention Rates", title = "Retention Rates by Control") + theme_bw() 
+```
+
+
+This scatter plot shows us there is a positive linear relationship between retention rate and completion rates (r=0.74). The association is particularly stronger for schools with retention rates greater than 60%. We notice the approximate slope of the line is flatter, indicating that retention rates are the upper bound for completion rates which makes sense since students need to persist through their first year in order to complete college. Further exploration of retention rates can be seen in Figure 2.
+
+
+## Institutional Level Variables
+
+Though completion rate is an based on an individual metric, whether or not a student completes their program, how do larger institutional factors, many of which are out of a student's control impact completion rates? This section examines the relationship between cost of attendance and faculty pay to completion rates.
+
+```{r echo=FALSE, warning=FALSE, fig.width=5, fig.height=6}
+pp + geom_point(aes(x = COSTT4_A, y=C150_4, color=CONTROL), alpha=0.5) + labs(x="Average Cost of Attendance",y="Completion Rates", title="Average Cost of Attendance vs \n Student Completion Rates") + theme_bw() + facet_grid(rows = vars(CONTROL)) + theme(legend.position = "bottom", legend.box = "horizontal")
+```
+This plot shows the relationship between cost and completion faceted by control. We notice that average cost of attendance is generally associated with higher completion rates across all three controls. There appears to be a stronger relationship between cost of attendance and completion rates for public and private nonprofit schools. Since public schools are generally cheaper than private schools as seen in Figure 3, a change in cost corresponds to a greater change in completion rate than in the private nonprofit case. This overall positive association between cost and completion could point to more pressure to complete school at more costly institutions to ensure students are getting their money’s worth.
+
+```{r echo=FALSE, fig.margin = TRUE, warning=FALSE, fig.cap="This box plot shows the distribution of average cost by control. There is a stark difference between public and private institutions. This makes sense as public schools are positioned to be the more accessible and affordable higher education option, thus should cost less than private schools on average."}
+p + geom_boxplot(aes(x=CONTROL, y=COSTT4_A)) + labs(x="Institution Control", y="Average Cost", title = "Average Cost by Control") + theme_bw() 
+```
+Further, completion rates are generally motivated by other factors such as the resources a student has available at their given institution. Some of these resources can include course selection, program offerings, and quality of teaching. Though we are limited by the variables available by the College Scorecard, teacher pay has been discussed alongside quality of instruction (Will). 
+
+
+```{r echo=FALSE, warning=FALSE, fig.width=6, fig.height=4}
+pp + geom_point(aes(x = AVGFACSAL, y=C150_4, color=CONTROL), alpha=.5)  + labs(x="Average Faculty Monthly Salary",y="Completion Rates", title="Faculty Earnings vs Student Completion Rates", color="Control") + theme_bw() + theme(legend.position = "bottom", legend.box = "horizontal")
+```
+
+This plot examines the relationship between average faculty monthly salary and completion rate. As observed, there is a generally positive relationship between faculty salary and completion rate. We also can observe a bit of clustering for private for-profit schools that are associated with lower faculty pay and lower completion rates. Though faculty pay is not indicative or associated with better teaching, this can lead to further conversations of mechanisms driving better quality of instruction which can lead to better student learning experiences and completion rates.
+
+```{r echo=FALSE, warning=FALSE, fig.width=5, fig.height=6, fig.cap="This plot shows the relationship between cost of attendance and average montly faculty pay motivated from observations seen in the last two plots. Cost and pay are positively associated with compltion rate, are cost and pay associated with each other? To some degree, yes. Across all three controls there is a positive association between cost and pay, with the most evident in private nonprofit schools.", fig.margin=TRUE}
+p + geom_point(aes(x = COSTT4_A, y=AVGFACSAL, color=CONTROL), alpha=.4) + labs(x="Average Cost of Attendance",y="Average Faculty Monthly Salary", title="Average Cost of Attendance vs \n Average Faculty Monthly Salary") + theme_bw() + facet_grid(rows = vars(CONTROL)) + theme(legend.position = "bottom", legend.box = "horizontal")
+```
+
+## Student Demographic Related Variables
+This section looks at more student-level variables in relationship to completion rates. Though much of literature points to student demographics as a motivating factor behind completion rate, it is important to keep in mind that this often points to a deficit mindset when it comes to student achievement. For instance, if there are more students who hold x identity, which is associated with lower completion rate, this does not necessarily mean there is something "wrong" with x students. This can be a good starting point to thinking about other other structural barriers at play and institutional level resources that can be provided to meet the needs of students.
+
+```{r echo=FALSE, warning=FALSE, fig.width=5, fig.height=5}
+pp + geom_point(aes(x = FIRST_GEN, y=C150_4, color=CONTROL), alpha=0.6) + labs(x="First-Gen Percentage",y="Completion Rates", title="First Generation Students vs Student Completion Rates", color="Control") + theme_bw() + theme(legend.position = "bottom", legend.box = "horizontal")
+```
+First-generation college students are students who neither parent completed college. First generation college students face unique challenges  compared to their non-first generation counter parts such as navigating the college system without the guidance from their parents. This plot shows the relationship between the percentage of first generation students and completion rates. As observed there is a negative relationship between these two variables. We also notice most schools have a first generation minority, as indicated by the majority points to the left of the 50% mark. This association can point to first generation students facing challenges with completion as they may not have the resources some of their peers have.
+
+```{r echo=FALSE, warning=FALSE, fig.width=5, fig.height=4}
+pp + geom_point(aes(x = FAMINC, y=C150_4, color=CONTROL, fig.width=7, fig.height=4), alpha=0.5) + labs(x="Average Family Income",y="Completion Rate", title="Family Income vs Completion Rate") + theme_bw() + theme(legend.position = "bottom", legend.box = "horizontal")
+```
+
+Another metric that can possibly impact completion rate is wealth. Ths scatterplot demonstrates the relationship between average family income and completion rate. We notice that there is positive relationship between family income and completion rates. By using family income of an institution as a proxy for the general wealth of the student body, this plot shows us that schools with wealthier families tend to have higher completion rates. 
+
+```{r echo=FALSE, warning=FALSE, fig.width=5, fig.height=4, fig.margin=TRUE, fig.cap="Though as seen in a previous plot between cost and completion, perhaps there is also some association between the types of schools wealthier families attend. This plot shows a positive association between family income and cost. This suggests that more costly schools may attract wealthier families, and is particularly more pronounced at private non profit schools compared to public schools."}
+pp + geom_point(aes(x = FAMINC, y=COSTT4_A, color=CONTROL, fig.width=7, fig.height=4), alpha=0.5) + labs(x="Average Family Income",y="Cost of Attendance", title="Family Income vs Cost of Attendance") + theme_bw() + theme(legend.position = "bottom", legend.box = "horizontal")
+```
+
+```{r echo=FALSE, warning=FALSE, fig.width=7, fig.height=4}
+pp + geom_point(aes(x = PPTUG_EF, y=C150_4, color=CONTROL), alpha=0.5) + geom_smooth(aes(x = PPTUG_EF, y=C150_4), method = "lm",formula = "y~x") + labs(x="Percentage of Part Time",y="Completion Rates", title="Part time vs Student Completion Rates") + theme_bw() + theme(legend.position = "bottom", legend.box = "horizontal")
+```
+
+Part-time students are students who enroll at an institution on a reduced course load. Due to their reduced course load, it is probably that it takes more time for these students to complete their degree. This plot shows the relationship between percentage of part time students and completion rates. Many institutions appear to have very little part time students. There is some negative association between part time students, but is fairly weak. Though on individual level, part-time students tend to take longer to complete their program than their full-time counterparts, having more full-time students may mitigate this effect.
+
+# Methods
+\newthought{Based} on the exploratory data analysis in the previous section and my previous domain knowledge, I hypothesize that higher completion rates are associated with schools that are not for-profit privates, pay their faculty more, have higher retention rates, have a lower percentage of first generation students and have higher family income.
+To test this hypothesize and to further discover what factors influence completion rate, I used a multiple regression model.
+
+For our purposes performing the regression, there cannot be any missing values in our data set. Any identifying information such as school name and city was removed since that is not be necessary for the model building. The state variable was also removed since in some cases there was only 1-2 schools in a given state which would have been challenging to build our model. Some of the variables that were included for the purposes of the exploratory data analysis but have a substantial amount of missing data, such as SAT scores, income, debt, etc. were removed from the data set. In addition, the average in-state and tuition variables were removed because it is collinear with in-state for non-public schools.
+
+The data set used to perform this analysis consists of 1772 observations representative of all 3 controls (1005 Private nonprofit, 549 Public, 168 Private nonprofit) and representative of 9 out of the 10 original regions^[Since US Service schools originally only consisted of 4 schools, there was not a large sample size to begin with. These four schools were missing data in variables necessary for the analysis].
+
+The data was first split in half. The first half of the data was used to perform model selection. To determine the best model, each model was evaluated based on its R-Squared value and 10-fold Cross Validation Test Error. The models that were tested with their corresponding R-Squared value and 10-fold Cross Validation Test Error are shown in the table below. 
+
+```{r echo=FALSE}
+results <- matrix(c(0.7681, 0.09721268,
+0.7675, 0.09500727,
+0.7686, 0.09520147,
+0.7953, 0.09348002,
+0.7748, 0.09381883,
+0.794, 0.0904593), ncol=2, byrow=TRUE)
+
+colnames(results) <- c('Adjusted R-Squared','10-fold Cross Validation')
+rownames(results) <- c('Full Model','Full Model Forward','Full Model Backward', 'Full Model w/ Interaction', 'Full Model w/ Interaction Forward','Full Model w/ Interaction Backward')
+
+kable(results)
+```
+As seen by the table, the backward step wise model with the interaction terms resulted in the highest adjust R squared value of 0.794 and lowest CV error of 0.0904593. 
+
+The interaction terms that was included in the 4th, 5th, and 6th model were *Percentage of First Generation Students x Percentage of Pell Grant students*, *Percentage Part-Time and Percentage of Students Over the 25 y/o*, and *Cost and Control* The first interaction term was based off of some domain knowledge that many first generation students are low-income, thus qualify for the Pell Grant.^[Though these terms are not indicative of each other. A student can be first generation and not low-income. Similar a student can be low-income and not first generation.] In addition, the terms 'first-generation' and 'low-income' have often been grouped together to reflect common overlapping experiences these student may have. The second interaction term was included based on an article (Marcus) that that mentions older students, many of whom are parents, are also working. As a result, they enroll on a part time basis. The third interaction term was included based off the notion that public schools are positioned as the most cost effective option compared to private schools, thus there might be some effect control has on cost.
+
+
+
+
+```{r include=FALSE}
+summary(fouryears)
+```
+
+```{r include=FALSE}
+full <- fouryears %>% filter(!is.na(C150_4))
+full <- full %>% filter(INSTNM != c("American University of Health Sciences")) %>% select(-c(MD_EARN_WNE_P10, GT_25K_P6, SAT_AVG, ACTCMMID, GRAD_DEBT_MDN, ADM_RATE, CITY, STABBR, PREDDEG, HIGHDEG, UGDS_2MOR, UGDS_NRA, UGDS_UNKN, DISTANCEONLY, ENDOWBEGIN, TUITIONFEE_OUT)) %>% filter(!is.na(FIRST_GEN)) %>% filter(C150_4 != 0) %>% filter(C150_4 != 1) %>% filter(RET_FT4 != 0) %>% filter(RET_FT4 != 1)  %>% drop_na() %>% filter(UGDS < 166816)  
+full$REGION <- droplevels(full$REGION)
+
+summary(full)
+
+```
+
+```{r include=FALSE}
+set.seed(3)
+in.build = sample(nrow(full), size = round(nrow(full) * .50))
+build_n = full[in.build, ]
+assess_n = full[-in.build, ]
+
+build <- build_n %>% select(-c(INSTNM))
+assess <- assess_n %>% select(-c(INSTNM))
+```
+
+```{r echo=FALSE, include=FALSE}
+model = lm(C150_4 ~ ., data = build)
+
+plot(model)
+plot(model$fitted.values, build$C150_4)
+abline(coef = c(0,1))
+```
+
+```{r echo=FALSE, include=FALSE}
+set.seed(5)
+summary(model)
+cvFit(model, data=build, y=build$C150_4, K = 10)
+
+
+
+```
+
+```{r echo=FALSE, include=FALSE}
+fm.lower = lm(C150_4 ~ 1, data = build)
+fm.upper = lm(C150_4 ~ ., data = build)
+forward <- step(fm.lower, scope = formula(fm.upper), direction = "forward", trace=FALSE)
+
+plot(forward)
+plot(forward$fitted.values, build$C150_4)
+```
+```{r echo=FALSE, include=FALSE}
+set.seed(5)
+summary(forward)
+cvFit(forward, data=build, y=build$C150_4, K = 10)
+
+```
+
+```{r echo=FALSE, include=FALSE}
+backward <- step(fm.upper, scope = formula(fm.upper), direction = "backward", trace=FALSE)
+
+
+plot(backward)
+plot(backward$fitted.values, build$C150_4)
+```
+
+```{r echo=FALSE, include=FALSE}
+set.seed(5)
+summary(backward)
+cvFit(backward, data=build, y=build$C150_4, K = 10)
+```
+
+
+```{r echo=FALSE, include=FALSE}
+# Interaction
+model_i = lm(C150_4 ~ . + FIRST_GEN:PCTPELL + UG25ABV:PPTUG_EF + COSTT4_A:CONTROL + NPT4:CONTROL, data = build)
+plot(model_i)
+plot(model_i$fitted.values, build$C150_4)
+abline(coef = c(0,1))
+```
+```{r echo=FALSE, include=FALSE}
+set.seed(5)
+summary(model_i)
+cvFit(model_i, data=build, y=build$C150_4, K = 10)
+
+
+```
+
+
+```{r echo=FALSE, include=FALSE}
+fm.lower_i = lm(C150_4 ~ 1, data = build)
+fm.upper_i = lm(C150_4 ~ . + FIRST_GEN:PCTPELL + UG25ABV:PPTUG_EF + COSTT4_A:CONTROL, data = build)
+forward_i <- step(fm.lower_i, scope = formula(fm.upper_i), direction = "forward", trace=FALSE)
+
+
+
+plot(forward_i)
+plot(forward_i$fitted.values, build$C150_4)
+```
+
+
+```{r echo=FALSE, include=FALSE}
+set.seed(5)
+summary(forward_i)
+cvFit(forward_i, data=build, y=build$C150_4, K = 10)
+```
+
+
+```{r echo=FALSE, include=FALSE}
+backward_i <- step(fm.upper_i, scope = formula(fm.upper_i), direction = "backward", trace=FALSE)
+
+plot(backward_i)
+plot(backward_i$fitted.values, build$C150_4)
+```
+
+```{r echo=FALSE, include=FALSE}
+set.seed(5)
+summary(backward_i)
+cvFit(backward_i, data=build, y=build$C150_4, K = 10)
+```
+
+
+
+
+# Results
+```{r, out.width="80%", echo=FALSE}
+# backward_ia <- lm(formula = C150_4 ~ CONTROL + UGDS + UGDS_BLACK + UGDS_HISP + 
+#     UGDS_ASIAN + UGDS_AIAN + UGDS_NHPI + PPTUG_EF + AVGFACSAL + 
+#     PCTPELL + RET_FT4 + UG25ABV + TUITFTE + TUITIONFEE_IN + COSTT4_A + 
+#     FIRST_GEN + FAMINC + UGDS_WOMEN + HBCU + NPT4 + PCTPELL:FIRST_GEN + 
+#     PPTUG_EF:UG25ABV + CONTROL:COSTT4_A, data=assess)
+#summary(backward_ia)
+include_graphics('results.png')
+```
+\newthought{The} backward step wise model with interaction terms resulted in an adjusted R-squared of 0.7958 which means the variables included in this models accounts for 79.58% of the variation in the completion rate variable. From the proposed hypothesis, we notice variables such retention rate, faculty salary, and family income are statistically significant meaning the variables have an effect on completion rate. 
+
+In the case of retention rate, if we were to keep everything constant, a one percentage point increase in retention rate would correspond to a .55 percentage point increase in completion rate. Similarly, in the case for faculty salary, an increase in salary of $10,000 would correspond to a .07 percentage point increase. 
+
+Our hypothesis also looks at the effects of first generation students and completion rates. This model incorporates an interaction term between first generation students and Pell grants. The effect of more first generation students is mitigated by more Pell Grant recipients. For instance, holding all other variables constant, consider an institution that has 50% first generation students (which is on the upperbound of first gen students). $Complete = -.35Pell +.84(Pell \times .5) = -.35+.42(Pell) = .7Pell$. Even though the first generation coefficient has a value of -.57, some of its effects can be mitigated by the Pell Grant variable. So a 1 percentage point increase in Pell Grant recipients corresponds with an .7 percentage point increase in completion rate. Thus the percentage first generation variable does have an effect on completion rate but may be partially mitigated by a higher percentage of Pell Grant recipients.
+
+In the exploration of the completion rate variable we noticed some association between cost and completion rate. We can formalize this by looking at the coefficients. Since this model includes the interaction term between control and cost, we can evaluate the effect of cost by control on completion rate. In the case for public schools, an increase in cost of \$10,000 corresponds to a .132 percentage point increase in completion rate. Similarly, since the coefficient for interaction between private for-profit and cost is nearly zero (-3e-7), cost has a similar effect on completion rate in the public and private for-profit case, corresponding to a ~.13 percentage point increase. On the other hand, the coefficient on the interaction term for private nonprofit is -1e-5. This results in the overall effect of a \$10,000 increase in cost to be an increase in a .03 percentage point. Thus the effect of cost on public and private for-profit school completion rate is much greater than the effect on cost on private nonprofit completion rate.
+
+In addition, variables such as percentage of Native Hawaiian/Pacific Islander and percentage of women are also statistically significant. However, this can point to the other underlying models and factors driving them to be important variables in the model. For instance, generally schools in the continental US have low percentage of NHPI students, however these students may make up the majority at institutions in Hawaii or Guam. As a result the effect of NHPI may only be applicable to certain institutions, and is not necessarily generalizable for the average US institution. Further exploration of institutions with high number of NHPI students can be helpful in understanding the true effects of this variable. 
+
+
+
+# Conclusion
+## Ethical Implications
+\newthought{The} College Scorecard is the first step in higher education accountability. The Actionable Intelligence for Social Policy classifies data initiatives on a scale from low to high risk and low to high benefit for society. The College Score can possibly falls into a moderate-risk higher-benefit category. Since this level is aggregate data from all universities, it is reflective of the undergraduate population, which does not disclose much about individuals identities. There is relatively low risk in having this data set publicly available, as there have been practices to anonymize sensitive data. However, one potential risk that has been pointed out of the College Scorecard should be used to observe larger macro trends rather than influencing individual college-going decisions. Much of this data is collected on the administrative level such as asking a student their race, gender, or family income, and may not be suited to make larger claims about students of a certain background. Thus, in this analysis it is important to talk about associations between variables rather than implying causality which can often point to deficit models in education achievement.
+
+Two important factors within the data life cycle include data collection and data access. 
+
+Data collection refers to the process of gathering information. In the context of the higher education, it is also important to consider data that is not collected. Often many efforts, including those of my own, fail to recognize the nuances of race in their data collection practices. In an article by Pilar Diaz in honor of Asian Pacific American Heritage Month, Diaz discusses the difficulties of collecting data for Native Hawaiian/Pacific Islander folks. Often times they are left out of data collection process, data analysis^[When I first did my analysis, I considered not including Indigenous and Pacific Islander undergraduates from my analysis since they only made up a small percentage of the population, however recognize by practicing this "statistically insignificant" mentality I was actively contributing to the neglect of these identities in other parts of society (government representation, access to resources, media representation, etc)], and ultimately policy decisions because of their small population size. However, this raises the even greater need to push for accurate data collection for these populations. Other data collection initiatives within higher education have looked at data disaggregation for Asian American communities.
+
+The data included in this data set touches on many areas in college college access literature ranging from topics such as affirmative action, need-based aid, and test optional admissions. Higher education has been branded as this equalizing force, but from initial observations have shown to be differences among various subgroups. Though there have been many skeptics that continue to think higher education is accessible, having access to macro level college data allows for us to use data driven evidence that points to larger issues in higher education. Data access allows us quantify structural barriers within higher education systems that make it more difficult for students to enter, succeed, and complete college.
+
+## Discussion & Limitations
+Results from this analysis were able to support my initial hypothesis that factors such as control, family income, first-generation students, high retention rate, and high faculty salaries drive completion rate. The model selected was able to account for 79.5% of the variance in the completion rate variable. By utilizing observational data, no causal statements can be made. However we were able to see some hidden effects variables such as Pell Grant had on First Generation. This discovered relationships can be the beginning of further exploration, research, and intervention. 
+
+The results in this analysis are different than the results in a similar analysis done by Lu and Uzzi. The focus of their paper is similar, to evaluate the factors associated with graduation rates. Their approach was also to utilize a multiple regression model utilizing the College Scorecard but wanted to examine the effects of three specific variables: family income, Pell Grant, and SAT scores. Though my model uses the first two variables in my model, it does not include the SAT score. SAT score is an interesting variable that has been found to discretely encode information on student's identities and backgrounds. SAT scores have been shown to effectively predict college success, which may have partially been covered by variables such as retention rate in my model. Though their model cannot imply causation either, this can point to underlying mechanisms that may make students more persistent throughout college. 
+
+A limitation of this data was only being able to think about completion rate from a larger macro level. Possible next steps to rethinking completion rates are asking questions like "How do about specific institutional resources and quality of student experiences affect completion rate?" This question touches on more causal perspectives as the intervention of a program or individual (like a professor) can affect a student's trajectory. Since students cannot change whether they are first generation or low income, this analysis may not be of use to make large policy decisions but rather understanding the college landscape and the fact that various factors and influencing completion rates that are out of one's control. The next step is to think about what action and interventions can mitigate some of these effects, and how can we quantify the effectiveness of these interventions on completion rates.
+
+# References
+* Actionable Intelligence for Social Policy. "A Toolkit for Centering Racial Equity Throughout Data Integration", https://aisp.upenn.edu/centering-equity/
+* Beach et al. "Pathways to Economic Mobility: Key Indicators", https://www.pewtrusts.org/~/media/legacy/uploadedfiles/wwwpewtrustsorg/reports/economic_mobility/pewempchartbook12pdf.pdf
+* Diaz, Pilar. "Beyond Just Data, Connecting with Native Hawaiian Pacific Islanders", https://www.first5la.org/article/beyond-just-data-connecting-with-native-hawaiian-pacific-islanders/
+* Hanover Research. "Retention and Graduation Rate Analysis", https://www.clarion.edu/about-clarion/offices-and-administration/university-support-and-business/office-of-institutional-research/retention-and-graduation-rate-analysis-clarion-university.pdf
+* Li, Lu and Mary Jane Uzzi. "An Evaluation of the Factors Influencing College Graduation Rate", https://www.causeweb.org/usproc/sites/default/files/usclap/2020-1/An%20Evaluation%20of%20the%20Factors%20Influencing%20College%20Graduation%20Rate.pdf
+* March, Jon. "Universities that are recruiting older students often leave them floundering", https://hechingerreport.org/universities-that-are-recruiting-older-students-often-leave-them-floundering/
+* The Hundred-Seven. "HBCU Listing", http://www.thehundred-seven.org/hbculist.html
+* The Institute for College Access and Success. "Takeaways from New Program-Level Data on the College Scorecard", https://ticas.org/accountability/data-evidence-and-information/takeaways-from-new-program-level-data-on-the-college-scorecard/
+* U.S. Department of Education. The College Scorecard, https://collegescorecard.ed.gov/data/
+* Will, Madeline. "Higher Pay Leads to Smarter Teachers, Global Study Says", https://www.edweek.org/teaching-learning/higher-pay-leads-to-smarter-teachers-global-study-says/2019/02
+
+
+# Appendix
+
+## Appendix 1: Data Dictionary
+```{r out.width="85%", echo=FALSE}
+include_graphics('dictionary.png')
+```
+\
+
+
+
+This data dictionary provides a definition for the variables in the data set used in this analysis.
+
+## Appendix 2: Geographic Distribution by Race
+```{r echo=FALSE}
+
+fouryear$BLACK_CT <- fouryear$UGDS * fouryear$UGDS_BLACK
+fouryear$HISP_CT <- fouryear$UGDS * fouryear$UGDS_HISP
+fouryear$WHITE_CT <- fouryear$UGDS * fouryear$UGDS_WHITE
+fouryear$ASIAN_CT <- fouryear$UGDS * fouryear$UGDS_ASIAN
+fouryear$AIAN_CT <- fouryear$UGDS * fouryear$UGDS_AIAN
+fouryear$NHPI_CT <- fouryear$UGDS * fouryear$UGDS_NHPI
+
+UGDS_TOTAL <- fouryear %>% select(STABBR, UGDS) %>% group_by(STABBR) %>% summarise_at(vars(UGDS), list(name = sum), na.rm = TRUE)
+
+### Remove NA before plotting
+
+white_box <- fouryear %>% select(REGION, UGDS_WHITE) %>% drop_na() %>% ggplot() + geom_boxplot(aes(x=REGION, y=UGDS_WHITE, fill=REGION)) + ylim(0,1) + labs(x="Region", y="Proportion of Enrolled White Students", title="Distribution of White Enrollement by Region") + coord_flip() + theme_bw() + fillScale + theme(legend.position="none")
+
+
+black_box <- fouryear %>% select(REGION, UGDS_BLACK) %>% drop_na() %>% ggplot() + geom_boxplot(aes(x=REGION, y=UGDS_BLACK, fill=REGION)) + ylim(0,1) + labs(x="Region", y="Proportion of Enrolled Black Students", title="Distribution of Black Enrollement by Region") + coord_flip() + theme_bw() + fillScale + theme(legend.position="none")
+
+hispanic_box <- fouryear %>% select(REGION, UGDS_HISP) %>% drop_na() %>% ggplot() + geom_boxplot(aes(x=REGION, y=UGDS_HISP, fill=REGION)) + ylim(0,1)  + labs(x="Region", y="Proportion of Enrolled Hispanic Students", title="Distribution of Hispanic Enrollement by Region") + coord_flip() + theme_bw() + fillScale + theme(legend.position="none")
+
+asian_box <- fouryear %>% select(REGION, UGDS_ASIAN) %>% drop_na() %>% ggplot() + geom_boxplot(aes(x=REGION, y=UGDS_ASIAN, fill=REGION)) + ylim(0,1)  + labs(x="Region", y="Proportion of Enrolled Asian Students", title="Distribution of Asian Enrollement by Region") + coord_flip() + theme_bw() + fillScale + theme(legend.position="none")
+
+aian_box <- fouryear %>% select(REGION, UGDS_AIAN) %>% drop_na() %>% ggplot() + geom_boxplot(aes(x=REGION, y=UGDS_AIAN, fill=REGION)) + ylim(0,1)  + labs(x="Region", y="Proportion of Enrolled American Indian/Alaska Native", title="Distribution of American Indian/Alaska Native Enrollement by Region") + coord_flip() + fillScale + theme(legend.position="none")
+
+nhpi_box <- fouryear %>% select(REGION, UGDS_NHPI) %>% drop_na() %>% ggplot()  + geom_boxplot(aes(x=REGION, y=UGDS_NHPI, fill=REGION)) + ylim(0,1)  + labs(x="Region", y="Proportion of Enrolled Native Hawaiian/Pacific Islander", title="Distribution of Native Hawaiian/Pacific Islander Enrollement by Region") + coord_flip() + fillScale + theme(legend.position="none")
+```
+
+
+```{r echo=FALSE, include=FALSE}
+## Trying to calculate demographic of total undergrad population
+usonly <- fouryear %>% select(REGION, UGDS, UGDS_BLACK, UGDS_HISP, UGDS_WHITE, UGDS_ASIAN, UGDS_AIAN, UGDS_NHPI) %>% filter(REGION != "Outlying Areas")
+
+usonly$BLACK_CT <- usonly$UGDS * usonly$UGDS_BLACK
+usonly$HISP_CT <- usonly$UGDS * usonly$UGDS_HISP
+usonly$WHITE_CT <- usonly$UGDS * usonly$UGDS_WHITE
+usonly$ASIAN_CT <- usonly$UGDS * usonly$UGDS_ASIAN
+usonly$AIAN_CT <- usonly$UGDS * usonly$UGDS_AIAN
+usonly$NHPI_CT <- usonly$UGDS * usonly$UGDS_NHPI
+
+ussum <- usonly %>%  summarise_at(vars(UGDS,BLACK_CT, HISP_CT, WHITE_CT, ASIAN_CT, AIAN_CT, NHPI_CT), list(total = sum), na.rm = TRUE)
+
+ussum$OTHER_CT_total = (ussum[1,1] - rowSums(ussum[,2:7]))[1,1]
+uscount <- t(ussum)
+uscount <- data.frame(uscount)
+uscount <- rownames_to_column(uscount)[-1,]
+
+colnames(uscount) <- c("demographic", "value")
+
+uscount <- uscount[order(uscount$value), ]
+
+uscount %>% ggplot() + geom_bar(aes(x=demographic, y=value), stat = "identity")
+
+```
+
+```{r echo=FALSE, include=FALSE}
+UGDS_WHITE_STATE <- fouryear %>% select(STABBR, WHITE_CT) %>% group_by(STABBR) %>% summarise_at(vars(WHITE_CT), list(name = sum), na.rm = TRUE)
+UGDS_WHITE_STATE <- merge(UGDS_WHITE_STATE, UGDS_TOTAL, by.x="STABBR", by.y="STABBR")
+UGDS_WHITE_STATE$Percentage <- UGDS_WHITE_STATE$name.x/UGDS_WHITE_STATE$name.y
+UGDS_WHITE_STATE$fips <- fips(UGDS_WHITE_STATE$STABBR)
+white_map <- plot_usmap(data=UGDS_WHITE_STATE, values="Percentage") + labs(title = "% of White Undergrad Enrollment by State") + theme(panel.background=element_blank()) + scale_fill_gradient(low = "white", high = "darkblue", na.value="grey90") +  theme(legend.position = "bottom", legend.box = "horizontal", plot.margin = unit(c(0, 6, 0, 0), "cm"), title=element_text(size=20), legend.title=element_text(size=15))
+#white_map
+```
+
+```{r echo=FALSE}
+UGDS_HISP_STATE <- fouryear %>% select(STABBR, HISP_CT) %>% group_by(STABBR) %>% summarise_at(vars(HISP_CT), list(name = sum), na.rm = TRUE)
+UGDS_HISP_STATE <- merge(UGDS_HISP_STATE, UGDS_TOTAL, by.x="STABBR", by.y="STABBR")
+UGDS_HISP_STATE$Percentage <- UGDS_HISP_STATE$name.x/UGDS_HISP_STATE$name.y
+UGDS_HISP_STATE$fips <- fips(UGDS_HISP_STATE$STABBR)
+hisp_map <- plot_usmap(data=UGDS_HISP_STATE, values="Percentage") + labs(title = "% of Hispanic Undergrad Enrollment by State") + theme(panel.background=element_blank()) + scale_fill_gradient(low = "white", high = "darkblue", na.value="grey90") +  theme(legend.position = "bottom", legend.box = "horizontal", plot.margin = unit(c(0, 6, 0, 0), "cm"), title=element_text(size=20), legend.title=element_text(size=15))
+#hisp_map
+```
+
+```{r echo=FALSE}
+UGDS_BLACK_STATE <- fouryear %>% select(STABBR, BLACK_CT) %>% group_by(STABBR) %>% summarise_at(vars(BLACK_CT), list(name = sum), na.rm = TRUE)
+UGDS_BLACK_STATE <- merge(UGDS_BLACK_STATE, UGDS_TOTAL, by.x="STABBR", by.y="STABBR")
+UGDS_BLACK_STATE$Percentage <- UGDS_BLACK_STATE$name.x/UGDS_BLACK_STATE$name.y
+UGDS_BLACK_STATE$fips <- fips(UGDS_BLACK_STATE$STABBR)
+black_map <- plot_usmap(data=UGDS_BLACK_STATE, values="Percentage") + labs(title = "% of Black Undergrad Enrollment by State") + theme(panel.background=element_blank()) + scale_fill_gradient(low = "white", high = "darkblue", na.value="grey90") +  theme(legend.position = "bottom", legend.box = "horizontal", plot.margin = unit(c(0, 6, 0, 0), "cm"), title=element_text(size=20), legend.title=element_text(size=15))
+#black_map
+```
+
+```{r echo=FALSE}
+
+UGDS_ASIAN_STATE <- fouryear %>% select(STABBR, ASIAN_CT) %>% group_by(STABBR) %>% summarise_at(vars(ASIAN_CT), list(name = sum), na.rm = TRUE)
+UGDS_ASIAN_STATE <- merge(UGDS_ASIAN_STATE, UGDS_TOTAL, by.x="STABBR", by.y="STABBR")
+UGDS_ASIAN_STATE$Percentage <- UGDS_ASIAN_STATE$name.x/UGDS_ASIAN_STATE$name.y
+UGDS_ASIAN_STATE$fips <- fips(UGDS_ASIAN_STATE$STABBR)
+asian_map <- plot_usmap(data=UGDS_ASIAN_STATE, values="Percentage") + labs(title = "% of Asian Undergrad Enrollment by State") + theme(panel.background=element_blank()) + scale_fill_gradient(low = "white", high = "darkblue", na.value="grey90") +  theme(legend.position = "bottom", legend.box = "horizontal", plot.margin = unit(c(0, 6, 0, 0), "cm"), title=element_text(size=20), legend.title=element_text(size=15))
+#asian_map
+```
+
+```{r echo=FALSE}
+UGDS_AIAN_STATE <- fouryear %>% select(STABBR, AIAN_CT) %>% drop_na() %>% group_by(STABBR) %>% summarise_at(vars(AIAN_CT), list(name = sum), na.rm = TRUE)
+UGDS_AIAN_STATE <- merge(UGDS_AIAN_STATE, UGDS_TOTAL, by.x="STABBR", by.y="STABBR")
+UGDS_AIAN_STATE$Percentage <- UGDS_AIAN_STATE$name.x/UGDS_AIAN_STATE$name.y
+UGDS_AIAN_STATE$fips <- fips(UGDS_AIAN_STATE$STABBR)
+aian_map <- plot_usmap(data=UGDS_AIAN_STATE, values="Percentage") + labs(title = "% of Native American/Alaskan Native Undergrad \n Enrollment by State") + theme(panel.background=element_blank()) + scale_fill_gradient(low = "white", high = "darkblue", na.value="grey90") +  theme(legend.position = "bottom", legend.box = "horizontal", plot.margin = unit(c(0, 6, 0, 0), "cm"), title=element_text(size=20), legend.title=element_text(size=15))
+#aian_map
+```
+
+
+```{r echo=FALSE}
+UGDS_NHPI_STATE <- fouryear %>% select(STABBR, NHPI_CT) %>% drop_na() %>% group_by(STABBR) %>% summarise_at(vars(NHPI_CT), list(name = sum), na.rm = TRUE)
+UGDS_NHPI_STATE <- merge(UGDS_NHPI_STATE, UGDS_TOTAL, by.x="STABBR", by.y="STABBR")
+UGDS_NHPI_STATE$Percentage <- UGDS_NHPI_STATE$name.x/UGDS_NHPI_STATE$name.y
+UGDS_NHPI_STATE$fips <- fips(UGDS_NHPI_STATE$STABBR)
+nhpi_map <- plot_usmap(data=UGDS_NHPI_STATE, values="Percentage") + labs(title = "% of Native Hawaiian/Pacific Islander Undergrad\n Enrollment by State") + theme(panel.background=element_blank()) + scale_fill_gradient(low = "white", high = "darkblue", na.value="grey90") + theme(legend.position = "bottom", legend.box = "horizontal", plot.margin = unit(c(0, 6, 0, 0), "cm"), title=element_text(size=20), legend.title=element_text(size=15))
+#nhpi_map
+```
+
+These box plot shows the distribution of student demographic by region for white, Black, Hispanic, and Asian, Native American/Alaskan Native, and Native Hawaiian/Pacific Islander undergraduates Though the US is a diverse country, there are higher concentrations of racial groups in various areas of the US whether this be due to the history of higher education, immigration patterns, or urban sprawl.^[The population has changed since 2013. But as a reference point, from the 2020 Census, the racial demographics were 58% white, 19% Hispanic, 12% Black, 6% Asian, 1% American Indian/Alaska Native, and 0.2% Native Hawaiian/Pacific Islander]. The map shows the proportion of undergrads in a designated racial category to the total undergraduate population for a certain state. The box plot shows the distribution of the percentage of undergraduates in a racial category for every institution represented in the data set.
+
+
+```{r echo=FALSE, fig.width=10, fig.height=7}
+#grid.arrange(white_map, white_box, nrow=1, ncol=2)
+white_map
+```
+```{r echo=FALSE, fig.width=6, fig.height=5}
+#grid.arrange(white_map, white_box, nrow=1, ncol=2)
+white_box
+```
+We observe there is a higher proportion of white students across most regions. White undergrad population are most notably the minority in Hawaii and states near the Mexican boarder such as California, Nevada, Arizona, New Mexico, and Texas. From the box plot, we white undergraduates typically make up the majority of undergraduate populations across the institutions represented in the data set.
+
+
+```{r echo=FALSE, fig.width=10, fig.height=7}
+#grid.arrange(hisp_map, hispanic_box, nrow=1, ncol=2)
+hisp_map
+
+
+```
+```{r echo=FALSE, fig.width=6, fig.height=5}
+#grid.arrange(hisp_map, hispanic_box, nrow=1, ncol=2)
+
+hispanic_box
+
+```
+In contrast to the white undergraduate population, we see some of the states near the Mexican boarder to be associated with a higher Hispanic undergraduate population. From the box plot, we see these regions include the Southwest and Far West. This includes states such as California, Nevada, Arizona, New Mexico, Texas. In addition, Florida has a higher Hispanic population which may be attributed to its large Cuban population.
+
+
+```{r echo=FALSE, fig.width=10, fig.height=7}
+#grid.arrange(black_map, black_box, nrow=1, ncol=2)
+black_map
+```
+```{r echo=FALSE, fig.width=6, fig.height=5}
+#grid.arrange(black_map, black_box, nrow=1, ncol=2)
+black_box
+```
+
+
+This map shows the average Black student enrollment percentage by state. Geographically, we see a higher concentration of Black undergrad enrollment in states located in the Southeast states. There is a larger population of Black people in the Southern States. In addition, many HBCUs are located in the Southeastern region which may contribute to a larger Black undergraduate population in these states.
+One observation from the box plot for enrolled black students is that the median is generally under 10% of the institution population, but there are many outliers as extreme as >75% for regions such as the Southeast, Great Lakes, and the Mid East. One possible explanation is that many Historically Black College and Universities (HBCU) are located in these area, which can make up most of the outlying values.
+
+
+
+```{r echo=FALSE, fig.width=10, fig.height=7}
+#grid.arrange(asian_map, asian_box, nrow=1, ncol=2)
+asian_map
+```
+```{r echo=FALSE, fig.width=6, fig.height=5}
+#grid.arrange(asian_map, asian_box, nrow=1, ncol=2)
+asian_box
+```
+We notice there is a larger percentage of Asian undergraduates in states such as California, Nevada, Washington, New York, New Jersey, and Hawaii. These states are located on opposite coasts but share commonalities of being located near the coast.
+
+
+```{r echo=FALSE, fig.width=10, fig.height=7}
+#grid.arrange(aian_map, aian_box, nrow=1, ncol=2)
+aian_map
+```
+```{r echo=FALSE, fig.width=6, fig.height=5}
+#grid.arrange(aian_map, aian_box, nrow=1, ncol=2)
+aian_box
+```
+
+```{r echo=FALSE, fig.width=10, fig.height=7}
+#grid.arrange(nhpi_map, nhpi_box, nrow=1, ncol=2)
+nhpi_map
+```
+```{r echo=FALSE, fig.width=6, fig.height=5}
+#grid.arrange(nhpi_map, nhpi_box, nrow=1, ncol=2)
+nhpi_box
+```
+
+
+Though Indigenous and Pacific Islander students make ups a small percentage of the undergraduate population on most college campuses, it is important to acknowledge their presence in various states throughout the US. States. States such as Oklahoma, New Mexico and Alaska have the highest percentage of Indigenous Peoples. In addition, Hawaii has the largest percentage of Pacific Islander which can attribute its large undergraduate Pacific Islander/Native Hawaiian population.
+
+
